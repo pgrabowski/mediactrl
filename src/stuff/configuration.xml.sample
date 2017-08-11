@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<mediactrl>
+	<sip address="192.168.0.1" port="5060" name="MediaServer" restrict="0.0.0.0"/>
+	<cfw address="192.168.0.1" port="7575" force-kalive="true"
+		certificate="/usr/share/mediactrl-prototype/mycert.pem"
+		privatekey="/usr/share/mediactrl-prototype/mycert.key"/>
+	<packages path="/usr/share/mediactrl-prototype/packages">
+		<msc-ivr>
+			<webserver local="/var/www/html" address="192.168.0.1" port="80"/>
+			<prompts>prompts</prompts>
+			<recordings>recordings</recordings>
+			<tmp>/tmp/mediactrl</tmp>
+		</msc-ivr>
+	</packages>
+	<codecs path="/usr/share/mediactrl-prototype/codecs"/>
+	<monitor port="6789"/>
+</mediactrl>

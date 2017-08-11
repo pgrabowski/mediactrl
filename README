@@ -1,0 +1,723 @@
+Project Homepage:
+
+	---------------------------------
+	http://mediactrl.sourceforge.net/
+	---------------------------------
+
+Contacts:
+
+	Alessandro Amirante: 	alessandro.amirante@unina.it
+	Tobia Castaldi:		tobia.castaldi@unina.it
+	Lorenzo Miniero:	lorenzo.miniero@unina.it
+	Simon Pietro Romano:	spromano@unina.it
+
+	COMICS Research Group @ University of Napoly Federico II:
+		http://www.comics.unina.it/
+	Meetecho:
+		http://www.meetecho.com/
+
+
+=====
+NOTES
+=====
+
+MEDIACTRL is a prototype testbed implementation, completely open source,
+of the  IETF (Internet Engineering Task Force, http://www.ietf.org/)
+Media Server Control (MEDIACTRL) Control Channel Framework. It is
+written in C/C++, and makes use of existing open source software for
+several of its functionality, e.g.:
+
+	* reSIProcate as its SIP stack;
+	* oRTP as its RTP stack;
+	* Expat to parse XML;
+	* Boost::Regex to validate and parse text;
+
+and others for some proof-of-concept media manipulation. Everything else
+has been projected and implemented from scratch, by taking into account
+the ongoing standardization efforts in the MEDIACTRL Working Group.
+
+The prototype includes both control (the interface between application
+servers and media servers) and processing (media manipulation and RTP)
+functionality: this means that, seen in an IP Multimedia Core Network
+Subsystem (IMS) context, the MEDIACTRL prototype acts as a complete MRF
+(Media Resource Function). A testbed implementation of the Application
+Server side functionality is being implemented as well, in order to
+test the protocol interaction in real-life scenarios.
+
+You can find the related drafts in the docs folder of this package. The
+currently implemented drafts are:
+
+	* draft-ietf-mediactrl-sip-control-framework-10
+	* draft-boulton-mmusic-sdp-control-package-attribute-03
+	* draft-ietf-mediactrl-ivr-control-package-06
+	* draft-ietf-mediactrl-mixer-control-package-06
+
+They are not 100% complete, but they have been implemented with the aim
+of having a prototype as close as possible to the specifications.
+
+
+Checkout the project website for more in depth information about the
+framework:
+
+	http://mediactrl.sourceforge.net/
+
+
+
+=====
+INDEX
+=====
+
+1. Installing the application and the plugins
+2. Configuring the framework
+3. Testing the functionality
+
+Appendix: Adding your own package/codec
+
+
+
+=============================================
+1. Installing the application and the plugins
+=============================================
+
+The following directives are to build the prototype on a Linux 
+environment: the prototype has been successfully tested on Fedora
+distributions, but should work fine on other as well. Feel free to
+contact us in case it doesn't. A Windows version of the prototype is
+not available yet, but is being worked upon... yes, really! Well,
+maybe not... however, in case you manage to build a Windows version
+yourself, don't hesitate in letting us know and we'll make it available
+with all the due credits!
+
+First of all, uncompress this package somewhere, e.g.:
+
+	mv mediactrl-prototype-0.4.0.tar.gz /usr/src
+	cd /usr/src
+	tar xfvz mediactrl-prototype-0.4.0.tar.gz
+	cd mediactrl-prototype-0.4.0
+
+Before attempting a compilation, be sure all the dependencies are
+fulfilled. The prototype needs the development versions of the following
+libraries installed in order to properly compile:
+
+	* reSIProcate (http://www.resiprocate.org/)
+	* oRTP (http://www.linphone.org/)
+	* GNU Common-C++ (http://www.gnu.org/software/commoncpp/)
+	* Boost (http://www.boost.org/)
+	* OpenSSL (http://www.openssl.org)
+	* Expat (http://expat.sf.net/)
+	* libcurl (http://curl.haxx.se/)
+	* FFmpeg (http://www.ffmpeg.org/)
+	* libgsm (for the GSM codec)
+
+It's quite likely that you'll have almost them all already installed
+(except reSIProcate and oRTP, maybe), so it shouldn't be too much of a
+problem.
+
+Then, launch the configure script:
+
+	./configure --prefix=/usr
+
+This will also check for the above mentioned dependencies, and fail with
+an error message in case any of them is missing on the target platform.
+
+If the configuration phase went fine, compile the application, together
+with all the available plugins:
+
+	make
+
+This will build the core application:
+
+	* mediactrl
+
+as well as the provided control packages:
+
+	* IvrPackage.so (msc-ivr/1.0)
+	* MixerPackage.so (msc-mixer/1.0)
+	* ExamplePackage.so (a dummy package, for testing only)
+	* ...
+
+and the codecs:
+
+	* AlawCodec.so (A-law)
+	* GsmCodec.so (GSM)
+	* UlawCodec.so (mu-law)
+	* ...
+
+To install the application and the modules to the folder you specified
+with --prefix, type:
+
+	make install
+
+In case you are interested in some detailed documentation, type:
+
+	make docs
+
+This will generate the code documentation with Doxygen (both html and
+latex) and save it in the 'docs' subfolder.
+
+
+
+============================
+2. Configuring the framework
+============================
+
+Once compiled, in case the application has been installed in a known
+path you just need to type:
+
+	mediactrl
+
+to start the framework. In case you want to suppress stderr, type the
+following instead:
+
+	mediactrl 2>/dev/null
+
+Notice that you can (or better, you MUST!) configure the application
+before starting it. This is only an una tantum step, of course.
+A sample configuration file:
+
+	configuration.xml.sample
+
+is provided in the settings folder (by default,
+"prefix"/share/mediactrl/etc). As you'll see, most of the settings
+regard the host itself. Just modify the configuration according to your
+needs, specifically for what concerns:
+
+	* SIP: the <sip/> element provides options regarding SIP, i.e. the
+		port the UAS will have to bind to (5060 by default), the
+		IP/domain to report in the signaling (e.g. 192.168.0.1, or
+		pippozzoserver.org) and the user part (by default it will be
+		'MediaServer'). Together they form the SIP URI the MediaCtrl
+		prototype will answer on, e.g.:
+
+			sip:MediaServer@192.168.0.1:5060
+				or
+			sip:MediaServer@pippozzoserver.org:5060
+		
+		Additionally, restrictions upon the allowed IP range for callers
+		can be requested (default is 0.0.0.0, allow everyone): for
+		instance, a restrict="192.168.1.0" would only accept INVITEs
+		coming from that subnet;
+
+	* CFW: the <cfw/> element provides options regarding the MediaCtrl
+		control channel protocol stack, specifically the transport
+		address the Media Server will be available on, which will also
+		be the one to be reported in SIP/SDP COMEDIA negotiations with
+		Application Servers, e.g. (assuming 192.168.0.1 is again the
+		main interface you want your Media Server to be reached on):
+
+			192.168.0.1:7575
+
+		additionally, you can choose whether to have a restrictive
+		Keep-Alive mechanism or not ('yes' means the MS tears down the
+		channel if the AS doesn't send a Keep-Alive before the timeout
+		expires, while 'no' leaves the channel open, useful when
+		debugging with the ncurses test application server); besides,
+		since the MS also supports CFW over TLS, you can specify a
+		certificate and key to use (the package comes with a default
+		certificate and key you can use for testing);
+
+	* Codecs: here you can specify the path where the codec plugins can
+		be found; it defaults to the 'codecs' subfolder of the path
+		where the application resides;
+
+	* Packages: here you can specify the path where the control package
+		plugins can be found; it defaults to the 'packages' subfolder of
+		the path where the application resides. Besides, you can set
+		here some control package specific settings as well. So far,
+		only settings for the IVR package are available: in fact, the
+		IVR package is responsible for file manipulations (e.g.
+		recording files, make them available via HTTP urls, playing
+		remote announcements and so on), which means it needs access
+		to a local webserver. The available settings are:
+
+			- webserver: specify here the local path of an active
+				webserver (/var/www/html is the default), as well as
+				the transport address clients can reach it on, e.g.:
+
+					http://192.168.0.1:8080
+						or
+					http://www.pippozzoserver.org:8080
+
+				be sure the application has the rights to write on the
+				folder you'll choose (e.g. for storing recorded files)
+				or it will fail at runtime, causing errors to be
+				reported to Application Servers;
+
+			- prompts: the subfolder of the above mentioned webserver
+				which will host predefined prompts (defaults to
+				./prompts); considering the testing purpose of the
+				prototype, the current version of the prototype makes
+				use of the base set of sounds provided with any Asterisk
+				(http://www.asterisk.org) distribution; this is
+				expecially needed whenever variable announcements are
+				involved, since the IVR package builds the related
+				announcements by assuming the Asterisk sounds are
+				available; so, just copy all the files, e.g.:
+				
+					cp -R /var/lib/asterisk/sounds/*
+						/var/www/html/prompts/
+				
+				and convert them to PCM WAV using sox, e.g.:
+				
+					cd /var/www/html/prompts
+					for x in *.gsm;
+						do sox -i $x -s -2 `basename $x .gsm`.wav;
+					done
+					for x in digits/*.gsm;
+						do sox -i $x -s -2 `basename $x .gsm`.wav;
+					done
+				
+				since we don't support the raw gsm format, and it will
+				do the trick; if you want to use your own set of prompts
+				(e.g. you have your recordings of digits, dates, and so
+				on), modify the source code for the IVR package
+				accordingly so that it makes use of them instead;
+
+			- recordings: the subfolder of the above mentioned webserver
+				which will host all the recordings the IVR package will
+				be asked to make (defaults to ./recordings); this folder
+				will need to be writable by the application, otherwise
+				runtime errors will occur, thus affecting the expected
+				behaviour;
+
+			- tmp: temporary folder which will be used by the IVR
+				package to store remotely retrieved files (e.g. remote
+				WAV files, retrieved by HTTP, which are needed for
+				announcements); it defaults to ./tmp, subfolder of the
+				path where the application is; again, be sure the
+				application has the rights to write on the specified
+				folder, or it will fail; be aware that the application
+				removes all the contents of this folder when it is
+				started, so if you need a copy of any of the files
+				there, you should make a backup of it yourself.
+
+	* Auditing: the application provides some very basic auditing
+		mechanism, mostly to just query about the internal state of the
+		protocols, transactions and packages for debugging purposes. It
+		is a proprietary feature of the application, not envisaged in
+		MEDIACTRL and as such not at all a standardized interface. A
+		standard approach for what concerns auditing is part of the
+		framework packages interaction as well, and so no configuration
+		is neede there. The configuration has a section for the
+		proprietary auditing interface instead, from where the listening
+		port can be specified (by default 6789).
+
+
+Once the configuration process has ended, you can start the application.
+By starting it without arguments, you'll have the application start and
+use the default configuration file (the 'configuration.xml' file in the
+settings folder, "prefix"/etc/configuration.xml).
+
+In case you wrote your own configuration file and want it to be used
+instead, you can use the -c (or --conf) option, followed by the path
+that leads to your file, e.g.:
+
+	mediactrl -c /home/bob/Documents/myconf.xml
+
+A -h (or --help) option will print (you guessed it!) a helping message:
+
+	mediactrl -h
+
+
+Please notice that, during the execution of the mediactrl application,
+you'll see A LOT of verbose debug. Almost each functionality will drop
+some information on the console: this is done on purpose, considering
+that the prototype is conceived to be an experimental testbed for a
+completely new protocol and framework, and so each aspect has to be
+considered. If you want to log all that happens, just redirect
+the output to a file by means of the tee application, e.g.:
+
+	mediactrl -c conf.xml | tee /home/bob/mylogfile.log
+
+This will save all the console notifications in the text file called
+mylogfile.log in /home/bob. In case the application fails to start, or
+crashes for any reason, feel free to contact us, providing us with the
+resulting log file in order to ease the debugging process in case of
+wrong behaviour.
+
+
+Checkout the next section to see how you can use the Media Server.
+
+
+
+============================
+3. Testing the functionality
+============================
+
+So, you've configured the application and started it: time to use it!
+As you know, you'll need an Application Server (or whatever else that
+can act as a control client to the Media Server) to interface with the
+functionality provided by the prototype. Sample call flows are depicted
+and described in our draft contribution, which you can find attached in
+the 'doc' folder:
+
+	draft-ietf-mediactrl-call-flows-00.txt
+
+and use as a reference for all your doubts and concerns about the
+protocol interactions.
+
+In case you don't want to implement a new AS from scratch, or are only
+interested in the protocols communication, you can make use of our
+proof-of-concept AS application, which is available on the website
+(http://mediactrl.sourceforge.net/). It shows almost all the
+functionality the MS provides, by presenting the UAC with IVR-based
+menus and recordings, private and global announcements, media
+connections, echo tests, conferencing features and so on. Arm yourself
+with tools like tcpdump/ethereal/etherape/wireshark/whatever and see
+what's going on between the AS and the MS!
+
+
+
+That's all, we're looking forward to receive your feedback about
+our project!
+
+
+
+=======================================
+Appendix: Adding your own package/codec
+=======================================
+
+Both control packages and codecs have been conceived as dynamically
+loadable plugins. This means they have been implemented as shared
+objects which make use of a specific API.
+
+A1. Codecs
+----------
+If you want to add a new codec, give a look at the existing ones for a
+reference. As you may have noticed, only audio is supported in this
+package, and this is reflected by how the API and the classes are
+conceived.
+
+To add a new codec you basically need to do the following:
+
+	* include "MediaCtrlCodec.h", which contains the API for the codec
+		plugins, as well as the MediaCtrlFrame class;
+
+	* define your new class so that it inherits from the MediaCtrlCodec
+		class, e.g.:
+
+			class MyCodec : public MediaCtrlCodec {
+				[...]
+
+		and overload the virtual methods with your own, specifically:
+
+			- constructor and destructor, of course only initialize the
+				common variables in the constructor, as format (as
+				defined in MediaCtrlCodec.h), name and blockLen;
+			- bool start()
+				this method starts the whole setup of the codec,
+				completing what the constructor does; the codec is not
+				to be used before it is started; a failure to start
+				(return false) means the inability to make use of the
+				codec;
+			- bool checkAvt(int avt)
+				this method checks if the codec is associated to a
+				specific AVT profile; it is used by the SIP/RTP stacks
+				to check which codec to open after a successful
+				negotiation;
+			- MediaCtrlFrame *encode(MediaCtrlFrame *outgoing)
+				and
+			  MediaCtrlFrame *decode(MediaCtrlFrame *incoming)
+				the methods where the *core* of the codec resides; as
+				the name suggests, they respectively encode a raw frame
+				using the new codec, and decode a frame encoded with the
+				new codec to raw.
+
+		(For more details upon each of these methods, check how they're
+		implemented in the already available codecs.)
+
+	* finally, you'll need to define the class factory for your new
+	class, specifically two C methods to respectively create a new
+	instance of your class and destroy an existing one, e.g.:
+
+			extern "C" MediaCtrlCodec* create()
+			{
+				// do something
+				MyCodec *codec = new MyCodec();
+				// do something else
+				return codec;
+			}
+
+			extern "C" void destroy(MediaCtrlCodec* c)
+			{
+				delete c;
+			}
+
+		These methods are needed to allow the handling of class
+		instances in shared objects, so that to avoid name mangling.
+
+This is not an exhaustive overview on the interfaces a codec might
+expose. Give a look at the provided codecs (e.g. GsmCodec.cxx) to see
+how a new audio codec can be implemented. Just make sure you never
+explicitly delete a frame you handle in the codec, since a dedicated
+frame garbage collector is used that does this automatically.
+
+Once you've ended writing your new codec, you can have it automatically
+compiled with the other codecs by copying it to the 'codecs' folder and
+modifying Makefile.am accordingly (just look at the list of existing
+codecs for an example on how to do this). In case your code exceeds a
+single file, you'll have to play a bit with the Makefile.am template in
+order to get it compiled. If you made use of external libraries which
+are not listed in the current codec dependencies, add a check for them
+to the configure.in template. Then go back to the root of the code,
+e.g.:
+
+	cd /usr/src/mediactrl-prototype-0.4.0
+
+and type:
+
+	autoreconf
+
+to regenerate the configure script and the Makefile. At this point,
+reinstalling the application:
+
+	./configure && make && make install
+
+will have your new codec installed as well.
+
+You can also compile your new codec separately in your own project,
+as long as the interfaces are respected. Once your .so file is ready,
+just copy it to your 'codecs' folder to have it loaded at runtime
+by the application.
+
+
+A2. Packages
+------------
+If, instead, you want to add a new control package, the procedure is
+different, even if the approach is similar. Give a look at the existing
+ones for a reference. You basically need to do the following:
+
+	* include "ControlPackage.h", which contains the API for the package
+		plugins, as well as the definitions for how to interact with
+		codecs, connections, and so on (which, being part of the core or
+		other external libraries, are not directly accessible from the
+		control package object itself); it also already includes
+		"MediaCtrlCodec.h" to get access to media connections which are
+		available to the framework and frames flowing on them;
+
+	* define your new class so that it inherits from the ControlPackage
+		class, e.g.:
+
+			class MyPackage : public ControlPackage {
+				[...]
+
+		The ControlPackage class extends the Common-C++ Thread class,
+		which means you'll have to make sure the
+
+			void run()
+
+		method is overloaded; the package thread will be started as soon
+		as the 'start()' method is invoked;
+
+	* as before, overload the virtual methods with your own; the
+		constructor is responsible for filling the name, version, desc
+		and mimeType variables, e.g.:
+
+			name = "msc-ivr";
+			version = "1.0";
+			desc =  "Media Server Control - Interactive"
+					"Voice Response - version 1.0";
+			mimeType = "application/msc-ivr+xml";
+
+		since those variables are accessed for the control packages
+		negotiation in SYNC messages, as well as to let the stack know
+		to which package a framework CONTROL message request is
+		addressed to.
+
+		About the other methods, the most important is:
+
+			void control(void *sender, string tid, string blob)
+
+		which is triggered every time your package receives CONTROL
+		message bodies meant for it; an opaque pointer is passed, which
+		is associated, at the framework level, to the AS which
+		originated the request; since the framework needs it to be aware
+		of who must receive replies (many AS may be connected to the
+		same MS), this pointer must NOT be touched by your package, and
+		it is up to the package to store it and use it in any subsequent
+		200/REPORT/CONTROL related to the original request; for the same
+		reason, it is also up to your package to keep track of the
+		transaction-id (tid) for subsequent replies (error codes,
+		REPORTs); the CONTROL message body is a string containing the
+		so-called XML "blob" of the request; it is up to your package to
+		parse it (since it is opaque to the CFW stack) and handle it
+		accordingly. It is up to the package to decide whether to
+		extend this transaction or not (assuming no error has been
+		been found, of course); if the transaction is to be extended, a
+		202 message is triggered and a REPORT terminate sent when it is
+		done (REPORT update messages are also sent by the CFW stack
+		automatically whenever needed); otherwise, a 200 message is sent
+		at the successful completion of the request. Anyway, your
+		package does not need to worry about this details: all it needs
+		to do is take the request, handle it, and reply when ready; the
+		stack will take care of how to provide the requester with the
+		messages.
+
+		The other virtual methods to be overloaded are related to the
+		media connections; in fact, connections themselves inform the
+		interested packages about events by means of these methods,
+		e.g.:
+
+			void incomingFrame(ControlPackageConnection *connection,
+					ControlPackageConnection *subConnection,
+					MediaCtrlFrame *frame)
+				means that 'frame' was just received
+				from that 'connection'/'subConnection; if your package
+				receives this event, it means that it
+				is currently handling that connection
+				for some transaction, and that it
+				probably is interested to that frame
+				(the IVR package handling this connection
+				for a recording, for instance, would
+				use this frame to build the recorded file);
+			void connectionClosing(ControlPackageConnection *connection,
+					ControlPackageConnection *subConnection)
+				means that this connection is closing
+				(because the SIP transaction associated
+				to it has ended, for instance), and that
+				all transactions using it must be
+				informed;
+
+		and so on;
+
+	* the package can interact with the core by means of a specific
+		class called ControlPackageCallback; it is a callback mechanism
+		to trigger the core application; its most important feature is
+		the ability to pass information to the CFW stack, i.e. to answer
+		to CONTROL requests (via 200 or REPORT messages) and trigger
+		events to which the AS may have subscribed to (via MS-generated
+		CONTROL messages). Consider this example:
+
+			callback->report(this,			// This package
+					sender,			// Opaque pointer to the AS
+					tid,			// Transaction-id
+					200,	// Status
+					10,			// Timeout
+					NULL, 0);		// XML BLob
+
+		by this method, a package would ask the CFW stack to send a
+		successful response message to the AS which placed the request
+		(addressed by the opaque pointer sender), related to a
+		previously received CONTROL request transaction (tid); the
+		timeout value for the ACK is to be 10 seconds, and no body is
+		attached in this reply (blob=NULL, len=0); whether a 200 is
+		actually sent, or a REPORT message, this depends on how long
+		the process of handling the message in the package took, and on
+		the internal timeout counters of the CFW stack.
+
+		A 403 (Forbidden) is to be sent when a CONTROL request is not
+		authorized. A typical example is an AS trying to access
+		resources allocated by another AS in the same MS.
+
+		Error codes other than 200 and 403 are not conceived in this
+		package interface, since they only are used when the stack finds
+		errors in the message header: in-package errors instead, since
+		they are specific to the XML format the packages use, are
+		notified in REPORTs and/or 200 answers.
+
+		Checkout the use existing packages make of the report callback
+		for their needs for more information.
+
+		The callback also provides methods to:
+			- request connections
+				in case you need access to an available media connection
+				(because a CONTROL request asked you so, for instance)
+				and you want to be informed about events on it; an
+				example is:
+
+		MediaCtrlConnection *connection =
+			callback->getConnection(this, "a2s4d6g7~g4b6n3md");
+
+				which means the package requests the connection
+				identified by that connection-id; notice that access
+				to connections is not exclusive, and that the same
+				connection might be shared among more packages (e.g. a
+				connection might be joined to a conference, while at the
+				same time being recorded by the IVR package, or sending
+				DTMF tones to it);
+
+			- access specific configuration file values
+				in case you want to get settings related to your package
+				from the configuration file; this assumes there are
+				settings to be read, of course... the only package
+				making use of this feature is the IVR on, currently;
+				in case you want to use the configuration file for your
+				package, add a new child to the <package> element,
+				called exactly as stated in the name variable, and use
+				its children for settings, e.g.:
+
+		<packages path="./packages">
+			...
+			<msc-my-package>
+				<myelement mynumber="123" myvalue="xyz"/>
+			</msc-my-package>
+			...
+		</packages>
+
+				to access each of the settings:
+
+		string number = callback->getPackageConfValue(this,
+				"myelement", "mynumber");
+
+				the method always returns a string, which means that all
+				the casting and type manipulation is up to you;
+
+			- send frames over existing connections
+				to send a frame you manipulated on a connection you're
+				handling, e.g.:
+
+		MediaCtrlFrame *mixedframe = getMyLatestMixedFrame();
+		pkg->callback->sendFrame(connection, mixedframe);
+
+		and so on;
+
+	* finally, as before you'll need to define the class factory for
+		your new package, specifically two C methods to respectively
+		create a new instance of your class and destroy an existing one.
+		The create factory is responsible of passing information about
+		the Control Package manager and of starting the package thread:
+
+			extern "C"
+			ControlPackage* create(ControlPackageCallback *callback)
+			{
+				MyPackage *pkg = new MyPackage();
+				pkg->setCallback(callback);
+				pkg->start();
+				return pkg;
+			}
+
+			extern "C" void destroy(MediaCtrlCodec* c)
+			{
+				delete c;
+			}
+
+		These methods are needed to allow the handling of class
+		instances in shared objects, so that to avoid name mangling.
+
+Again, this is not an exhaustive overview on the interfaces a package
+might expose. Give a look at the provided packages (e.g. IvrPackage.cxx)
+to see how a new package can be implemented. Again, make sure that any
+frame handled in the package (whether it has been created within the
+package itself or not) is not explicitly freed, since there's a
+dedicated garbage collector that takes care of cleaning old frames
+automatically.
+
+Follow the same procedure explained for codecs (Makefile.am and
+optionally configure.in modification, autoreconf, etc.) to add your
+package to the list of packages to build in the project.
+
+As for codecs, since packages are just plugins you can also compile your
+new package separately in your own project. Once your .so file is ready,
+just copy it to your 'packages' folder to have it loaded at runtime by
+the application.
+
+
+A3. Closing remarks
+-------------------
+This small README can't possibly cover all the functionality provided by
+the API for codecs and packages, so the rest is left to your
+understanding from the headers and the code of the existing packages.
+The Doxygen documentation might come in handy as well, so make sure you
+check it out for a better understanding of the code. In case you have
+doubts regarding any of the methods and the callbacks don't hesitate to
+contact us.
