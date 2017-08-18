@@ -44,8 +44,8 @@ using namespace mediactrl;
 using namespace ost;
 
 static TlsSetup *tls;
+static const SSL_METHOD *method = NULL;
 static SSL_CTX *context = NULL;
-static SSL_METHOD *method = NULL;
 static int verify_callback(int preverify_ok, X509_STORE_CTX *ctx);
 string sha1Fingerprint(SSL *session);
 string sha1FingerprintPeer(SSL *session);

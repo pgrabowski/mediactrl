@@ -358,7 +358,6 @@ string MediaCtrl::getPackageConfValue(string package, string element, string att
 void MediaCtrl::loadCodecs()
 {
 	cout << "[SIP] Initializing libavcodec" << endl;
-	avcodec_init();
 	avcodec_register_all();
 	DIR *dir = NULL;
 	struct dirent *plugin = NULL;

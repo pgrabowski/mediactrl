@@ -770,7 +770,7 @@ string CfwStack::matchPackages(string pkgs, bool *ok)
 	sregex_token_iterator b;
 	string pkg = "";
 	if((a == b) || (*a == "")) {	// No matches
-		ok = false;
+		*ok = false;
 		supported << supportedPackages << "\r\n";
 		return supported.str();
 	}
@@ -782,7 +782,7 @@ string CfwStack::matchPackages(string pkgs, bool *ok)
 		if(!regex_match(pkg.c_str(), matches, re)) {
 			// Invalid package
 			cout << "[CFW] Invalid package: " << pkg << endl;
-			ok = false;
+			*ok = false;
 			supported << supportedPackages << "\r\n";
 			return supported.str();
 		}
@@ -791,7 +791,7 @@ string CfwStack::matchPackages(string pkgs, bool *ok)
 		if(loc == string::npos) {	// Not found
 			cout << "Failed" << endl;
 			cout << "[CFW]     !!! This will result in a 422 error message !!!" << endl;
-			ok = false;
+			*ok = false;
 			supported << supportedPackages << "\r\n";
 			return supported.str();
 		}

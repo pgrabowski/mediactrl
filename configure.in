@@ -23,7 +23,7 @@ if test $HAVE_DOXYGEN = "false"; then
 fi
 
 # Checks for libraries.
-AC_CHECK_LIB(ares, ares_init, , AC_MSG_ERROR([Please install libares (reSIProcate)]))
+AC_CHECK_LIB(cares, ares_init, , AC_MSG_ERROR([Please install libares (reSIProcate)]))
 FFMPEG_ALTDIR=false
 AC_CHECK_HEADER([ffmpeg/avcodec.h], [HAVE_LIBAVCODEC=true], [HAVE_LIBAVCODEC=false])
 AM_CONDITIONAL(HAVE_LIBAVCODEC,$HAVE_LIBAVCODEC)
@@ -55,7 +55,7 @@ if test $HAVE_LIBAVCODEC = "false"; then
 			  FFMPEG_ALTDIR=true
 		fi
 fi
-LIBS="-lavcodec -lavformat $LIBS "
+LIBS="-ldl -lavcodec -lavformat $LIBS "
 AM_CONDITIONAL(FFMPEG_ALTDIR,$FFMPEG_ALTDIR)
 AC_CHECK_LIB(crypto, CRYPTO_malloc, , AC_MSG_ERROR([Please install libcrypto]))
 AC_CHECK_LIB(curl, curl_global_init, , AC_MSG_ERROR([Please install libcurl]))

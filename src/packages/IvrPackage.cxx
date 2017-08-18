@@ -42,16 +42,21 @@
 #include <math.h>
 #include <limits.h>
 
+#define AVCODEC_MAX_AUDIO_FRAME_SIZE 192000
 
 extern "C" {
 #ifdef FFMPEG_ALTDIR
 #include <libavformat/avformat.h>	// FFmpeg libavformat
 #include <libavcodec/avcodec.h>	// FFmpeg libavcodec
 #include <libavutil/fifo.h>	// FFmpeg fifo handler (for audio resampling)
+#include <libavutil/time.h>	// FFmpeg fifo handler (for audio resampling)
+#include <libswresample/swresample.h>
 #else
 #include <ffmpeg/avformat.h>	// FFmpeg libavformat
 #include <ffmpeg/avcodec.h>	// FFmpeg libavcodec
 #include <ffmpeg/fifo.h>	// FFmpeg fifo handler (for audio resampling)
+#include <ffmpeg/time.h>	// FFmpeg fifo handler (for audio resampling)
+#include <ffmpeg/swresample.h>
 #endif
 }
 static bool ffmpeg_initialized = false;
@@ -2096,7 +2101,7 @@ int IvrDialog::prepare()
 							cout << "(end)" << endl;
 						cout << "[IVR] Preparing audio frames now" << endl;
 						AVFormatContext *fctx = NULL;
-						if(av_open_input_file(&fctx, prompt->getFilename().c_str(), NULL, 0, NULL) != 0) {
+						if(avformat_open_input(&fctx, prompt->getFilename().c_str(), NULL, NULL) != 0) {
 							cout << "[IVR] Couldn't open the file " << prompt->getFilename() << endl;
 							// Remove the invalid prompt from the cache
 							filesCacheM.enter();
@@ -2107,7 +2112,7 @@ int IvrDialog::prepare()
 							delete prompt;
 							return 429;		// FIXME This is an error opening, not retrieving...
 						}
-						if(av_find_stream_info(fctx) < 0) {
+						if(avformat_find_stream_info(fctx, NULL) < 0) {
 							cout << "[IVR] Couldn't find stream information for the file " << prompt->getFilename() << endl;
 							// Remove the invalid prompt from the cache
 							filesCacheM.enter();
@@ -2116,10 +2121,10 @@ int IvrDialog::prepare()
 							errorString << "Couldn't find stream information for the file " << prompt->getName();
 							delete promptInstance;
 							delete prompt;
-							av_close_input_file(fctx);
+							avformat_close_input(&fctx);
 							return 429;		// FIXME This is an error opening, not retrieving...
 						}
-						dump_format(fctx, 0, prompt->getFilename().c_str(), 0);
+						av_dump_format(fctx, 0, prompt->getFilename().c_str(), 0);
 						if(fctx->nb_streams < 1) {
 							cout << "[IVR] No stream available for the file " << prompt->getFilename() << endl;
 							// Remove the invalid prompt from the cache
@@ -2129,7 +2134,7 @@ int IvrDialog::prepare()
 							errorString << "No stream available for the file " << prompt->getName();
 							delete promptInstance;
 							delete prompt;
-							av_close_input_file(fctx);
+							avformat_close_input(&fctx);
 							return 429;		// FIXME This is an error opening, not retrieving...
 						}
 						int i = 0;
@@ -2144,17 +2149,17 @@ int IvrDialog::prepare()
 								errorString << "Error seeking file " << prompt->getName();
 								delete promptInstance;
 								delete prompt;
-								av_close_input_file(fctx);
+								avformat_close_input(&fctx);
 								return 429;		// FIXME This is an error opening, not retrieving...
 							}
 							AVCodecContext *ctx = fctx->streams[i]->codec;
-							if(ctx->codec_type == CODEC_TYPE_VIDEO) {
+							if(ctx->codec_type == AVMEDIA_TYPE_VIDEO) {
 								if(step > 0)	// We're looking for audio, try the next track
 									continue;
 							}
 							AVCodec *codec = avcodec_find_decoder(ctx->codec_id);
 							if(!codec) {
-								if(pAudio && (ctx->codec_type == CODEC_TYPE_AUDIO)) {	// We explicitly need audio and it doesn't work
+								if(pAudio && (ctx->codec_type == AVMEDIA_TYPE_AUDIO)) {	// We explicitly need audio and it doesn't work
 									// Remove the invalid prompt from the cache
 									filesCacheM.enter();
 									filesCache.erase(prompt->getFilename());
@@ -2162,14 +2167,14 @@ int IvrDialog::prepare()
 									errorString << "Error opening codec for file " << prompt->getName();
 									delete promptInstance;
 									delete prompt;
-									av_close_input_file(fctx);
+									avformat_close_input(&fctx);
 									return 429;		// FIXME This is an error opening, not retrieving...
 								} else
 									continue;
 							}
-							if(avcodec_open(ctx, codec) < 0) {
+							if(avcodec_open2(ctx, codec, NULL) < 0) {
 								cout << "[IVR]\t\tCouldn't initiate the codec for stream " << dec << i << endl;
-								if(pAudio && (ctx->codec_type == CODEC_TYPE_AUDIO)) {	// We need audio and it doesn't work
+								if(pAudio && (ctx->codec_type == AVMEDIA_TYPE_AUDIO)) {	// We need audio and it doesn't work
 									// Remove the invalid prompt from the cache
 									filesCacheM.enter();
 									filesCache.erase(prompt->getFilename());
@@ -2177,7 +2182,7 @@ int IvrDialog::prepare()
 									errorString << "Error opening codec for file " << prompt->getName();
 									delete promptInstance;
 									delete prompt;
-									av_close_input_file(fctx);
+									avformat_close_input(&fctx);
 									return 429;		// FIXME This is an error opening, not retrieving...
 								} else
 									continue;
@@ -2208,7 +2213,18 @@ int IvrDialog::prepare()
 							if(rate > 0)
 								cout << "[IVR] Duration: " << dec << duration << "ms (rate ~ " << rate << ", timing ~ " << aTiming << ") in " << dec << fctx->streams[i]->nb_frames << " frames" << endl;
 							// Check if we can do resampling
-							ReSampleContext *resample = audio_resample_init(1, ctx->channels, 8000, ctx->sample_rate);
+							//ReSampleContext *resample = audio_resample_init(1, ctx->channels, 8000, ctx->sample_rate);
+              
+              //todo in/out_sample_fmt is set wrong
+              SwrContext *resample = swr_alloc_set_opts(NULL,  // we're allocating a new context
+                      1,  // out_ch_layout
+                      AV_SAMPLE_FMT_S16,    // out_sample_fmt
+                      8000,              // out_sample_rate
+                      ctx->channels, // in_ch_layout
+                      AV_SAMPLE_FMT_FLTP,   // in_sample_fmt
+                      ctx->sample_rate,                // in_sample_rate
+                      0,                    // log_offset
+                      NULL);                // log_ctx
 							if(!resample) {
 								cout << "[IVR] \t\tCouldn't create the resampler for stream " << dec << i << "..." << endl;
 								errorString << "Error creating resampler for file " << prompt->getName();
@@ -2218,10 +2234,10 @@ int IvrDialog::prepare()
 								delete promptInstance;
 								delete prompt;
 								avcodec_close(ctx);
-								av_close_input_file(fctx);
+								avformat_close_input(&fctx);
 								return 429;		// FIXME This is an error opening, not retrieving...
 							}
-							audio_resample_close(resample);
+							swr_close(resample);
 							resample = NULL;
 							// Start working on the indexing
 							AVPacket packet;
@@ -2269,7 +2285,7 @@ int IvrDialog::prepare()
 								delete promptInstance;
 								delete prompt;
 								avcodec_close(ctx);
-								av_close_input_file(fctx);
+								avformat_close_input(&fctx);
 								return 429;		// FIXME This is an error opening, not retrieving...
 							}
 							if(rate == 0) {	// No fps were guessed before, try now
@@ -2302,7 +2318,7 @@ int IvrDialog::prepare()
 								audioShortestDuration = audioDuration[step];
 							avcodec_close(ctx);
 						}
-						av_close_input_file(fctx);
+						avformat_close_input(&fctx);
 						fctx = NULL;
 						audioPrompts.push_back(promptInstance);
 						promptInstance->closeFile();
@@ -3036,11 +3052,12 @@ void IvrDialog::playAnnouncements()
 	playing = false;
 	bool firstAudioFrame = true;
 
+  int data_size;
 	int *sIndex = NULL, aStream[TRACKS];
 	AVFormatContext *fctx = NULL, *afctx[TRACKS];
 	AVCodecContext *ctx = NULL, *actx[TRACKS];
 	AVCodec *codec = NULL, *acodec[TRACKS];
-	ReSampleContext *resample[TRACKS];
+	SwrContext *resample[TRACKS];
 	AVFrame *incoming = NULL, *packetFrame = NULL;
 	AVPacket packet;
 	packet.data = NULL;
@@ -3130,9 +3147,7 @@ void IvrDialog::playAnnouncements()
 	int size = 0;
 	int8_t *resampleBuf = (int8_t*)MCMALLOC(2 * AVCODEC_MAX_AUDIO_FRAME_SIZE, sizeof(int8_t));
 	int8_t *fifoBuf = (int8_t*)MCMALLOC(2 * AVCODEC_MAX_AUDIO_FRAME_SIZE, sizeof(int8_t));
-	AVFifoBuffer fifo[TRACKS];
-	for(track=0; track<TRACKS; track++)
-		av_fifo_init(&fifo[track], 2 * AVCODEC_MAX_AUDIO_FRAME_SIZE);
+	AVFifoBuffer *fifo = av_fifo_alloc_array(TRACKS, 2 * AVCODEC_MAX_AUDIO_FRAME_SIZE);
 
 	while(playing) {	// We loop until the announcement is over: VCR controls might delay its end
 		if(pAudio) {	// FIXME We use first track (track=0) as reference for all tracks
@@ -3193,14 +3208,14 @@ void IvrDialog::playAnnouncements()
 								actx[step] = NULL;
 							}
 							if(fctx) {
-								av_close_input_file(fctx);
+								avformat_close_input(&fctx);
 								fctx = NULL;
 								afctx[step] = NULL;
 							}
 							if(av_fifo_size(&fifo[step]) > 0)
 								av_fifo_drain(&fifo[step], av_fifo_size(&fifo[step]));
 							if(resample[step] != NULL)
-								audio_resample_close(resample[step]);
+								swr_close(resample[step]);
 							resample[step] = NULL;
 							promptInstance = annc->getPromptInstance();
 							audioPromptInstance[step] = promptInstance;
@@ -3209,14 +3224,14 @@ void IvrDialog::playAnnouncements()
 							} else {
 								prompt = promptInstance->getPrompt();
 								if(prompt != NULL) {
-									av_open_input_file(&fctx, prompt->getFilename().c_str(), NULL, 0, NULL);
-									av_find_stream_info(fctx);
-									dump_format(fctx, 0, prompt->getFilename().c_str(), 0);
+									avformat_open_input(&fctx, prompt->getFilename().c_str(), NULL, NULL);
+									avformat_find_stream_info(fctx, NULL);
+									av_dump_format(fctx, 0, prompt->getFilename().c_str(), 0);
 									av_seek_frame(fctx, -1, 0, AVSEEK_FLAG_BACKWARD);
 									// Take the first audio track
 									for(i=0; i<fctx->nb_streams; i++) {
 										ctx = fctx->streams[i]->codec;
-										if(ctx->codec_type == CODEC_TYPE_AUDIO)
+										if(ctx->codec_type == AVMEDIA_TYPE_AUDIO)
 											break;
 									}
 									cout << "Step #" << dec << step << "(audio) --> stream #" << dec << i << endl;
@@ -3225,15 +3240,28 @@ void IvrDialog::playAnnouncements()
 									actx[step] = ctx;
 									codec = avcodec_find_decoder(ctx->codec_id);
 									acodec[step] = codec;
-									resample[step] = audio_resample_init(1, ctx->channels, 8000, ctx->sample_rate);
+									//resample[step] = audio_resample_init(1, ctx->channels, 8000, ctx->sample_rate);
+                  
+                  //todo fix me sample fmt in/out
+                  resample[step] = swr_alloc_set_opts(NULL,  // we're allocating a new context
+                      1,  // out_ch_layout
+                      AV_SAMPLE_FMT_S16,    // out_sample_fmt
+                      8000,              // out_sample_rate
+                      ctx->channels, // in_ch_layout
+                      AV_SAMPLE_FMT_FLTP,   // in_sample_fmt
+                      ctx->sample_rate,                // in_sample_rate
+                      0,                    // log_offset
+                      NULL);                // log_ctx
+
 									if(resample[step] == NULL)
 										cout << "[IVR] \t\tError creating resammpler, audio will fail!" << endl;
-									avcodec_open(ctx, codec);
+									avcodec_open2(ctx, codec, NULL);
 									if(annc->getPromptInstance()->getClipBegin() > 0) {
 										// Then seek to the I-frame timestamp before our timestamp, and decode until we reach the one we want
 										int64_t pts = annc->getTimestamp();
 										av_seek_frame(fctx, 0, pts, AVSEEK_FLAG_BACKWARD);
-										ctx->hurry_up = 1;
+							      ctx->skip_idct = AVDISCARD_BIDIR;
+							      ctx->skip_frame = AVDISCARD_BIDIR;
 										if(packet.data)
 											av_free_packet(&packet);
 										do {
@@ -3246,11 +3274,21 @@ void IvrDialog::playAnnouncements()
 												continue;
 											if(packet.pts >= pts)
 												break;
-											err = avcodec_decode_audio2(ctx, (int16_t*)inBuffer, &size, packet.data, packet.size);
+											//err = avcodec_decode_audio2(ctx, (int16_t*)inBuffer, &size, packet.data, packet.size);
+                      //new start
+                      int got_frame = 0;
+                      err = avcodec_decode_audio4(ctx, packetFrame, &got_frame, &packet);
+                      //todo
+                      //if (got_frame) {
+                      //  data_size = av_samples_get_buffer_size(NULL, packet.audio_st->codec->channels, packet.audio_frame.nb_samples, packet.audio_st->codec->sample_fmt, 1);
+                      //  memcpy(packet.audio_buf, packet.audio_frame.data[0], data_size);
+                      //}
+                      //new end
 										} while(1);
 										if(packet.data)
 											av_free_packet(&packet);
-										ctx->hurry_up = 0;
+							      ctx->skip_idct = AVDISCARD_NONE;
+							      ctx->skip_frame = AVDISCARD_NONE;
 									}
 								}
 							}
@@ -3346,7 +3384,8 @@ void IvrDialog::playAnnouncements()
 							}
 							// Then seek to the frame timestamp before our timestamp, and decode until we reach the one we want
 							av_seek_frame(fctx, 0, pts, AVSEEK_FLAG_BACKWARD);
-							ctx->hurry_up = 1;
+							ctx->skip_idct = AVDISCARD_BIDIR;
+							ctx->skip_frame = AVDISCARD_BIDIR;
 							if(packet.data)
 								av_free_packet(&packet);
 							do {
@@ -3360,11 +3399,22 @@ void IvrDialog::playAnnouncements()
 									continue;
 								if(packet.pts >= pts)
 									break;
-								err = avcodec_decode_audio2(ctx, (int16_t*)inBuffer, &size, packet.data, packet.size);
+								//err = avcodec_decode_audio2(ctx, (int16_t*)inBuffer, &size, packet.data, packet.size);
+                //new start
+                int got_frame = 0;
+                //AVPacket *pkt = &is->audio_pkt;
+                err = avcodec_decode_audio4(ctx, packetFrame, &got_frame, &packet);
+                //todo
+                //if (got_frame) {
+                //  data_size = av_samples_get_buffer_size(NULL, packet->audio_st->codec->channels, packet->audio_frame.nb_samples, packet->audio_st->codec->sample_fmt, 1);
+                //  memcpy(packet->audio_buf, packet->audio_frame.data[0], data_size);
+                //}
+                //new end
 							} while(1);
 							if(packet.data)
 								av_free_packet(&packet);
-							ctx->hurry_up = 0;
+							ctx->skip_idct = AVDISCARD_NONE ;
+							ctx->skip_frame = AVDISCARD_NONE ;
 						}
 						if((annc != NULL) && (currentAnnouncement != announcements->end()) && (promptInstance != NULL) && (prompt != NULL) && (fctx != NULL)) {
 							newframe = NULL;
@@ -3393,20 +3443,23 @@ void IvrDialog::playAnnouncements()
 										currentAnnouncement++;	// FIXME
 										*currentDuration = *currentDuration + annc->getDuration();
 										size = AVCODEC_MAX_AUDIO_FRAME_SIZE;
-										err = avcodec_decode_audio2(ctx, (int16_t*)inBuffer, &size, packet.data, packet.size);
+                    //todo
+										//err = avcodec_decode_audio2(ctx, (int16_t*)inBuffer, &size, packet.data, packet.size);
 										from = size;
 										if((err < 0) || (from < 1))
 											break;
-										err = audio_resample(resample[step], (int16_t*)resampleBuf, (int16_t*)inBuffer, from/(ctx->channels*2));
-										if(err > 0)
-											av_fifo_write(&fifo[step], (uint8_t*)resampleBuf, err*2);
+                    //todo
+										//err = audio_resample(resample[step], (int16_t*)resampleBuf, (int16_t*)inBuffer, from/(ctx->channels*2));
+										//if(err > 0)
+										//	av_fifo_write(&fifo[step], (uint8_t*)resampleBuf, err*2);
 										if(av_fifo_size(&fifo[step]) >= 320)
 											break;	// Enough buffering...
 									}
 								}
 								if(av_fifo_size(&fifo[step]) >= 320) {
 									int16_t curBuffer[160];
-									err = av_fifo_read(&fifo[step], (uint8_t*)curBuffer, 320);
+                  //todo
+									//err = av_fifo_read(&fifo[step], (uint8_t*)curBuffer, 320);
 									if(err == 0) {
 										long int tmpBuffer[160];
 										for(j=0; j<160; j++) {
@@ -3649,11 +3702,11 @@ void IvrDialog::playAnnouncements()
 			actx[track] = NULL;
 		}
 		if(afctx[track]) {
-			av_close_input_file(afctx[track]);
+			avformat_close_input(&afctx[track]);
 			afctx[track] = NULL;
 		}
 		if(resample[track] != NULL)
-			audio_resample_close(resample[track]);
+			swr_close(resample[track]);
 		resample[track] = NULL;
 		av_fifo_free(&fifo[track]);
 	}
