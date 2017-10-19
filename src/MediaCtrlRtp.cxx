@@ -31,6 +31,12 @@
 
 #include "MediaCtrlRtp.h"
 
+#ifdef __ORTP_SUPPORTS_RTCP_PORT_CHANGE
+#define RTP_SESSION_SET_LOCAL_ADDR(rtpSession) rtp_session_set_local_addr(rtpSession, "0.0.0.0", -1, -1)
+#else
+#define RTP_SESSION_SET_LOCAL_ADDR(rtpSession) rtp_session_set_local_addr(rtpSession, "0.0.0.0", -1)
+#endif
+
 using namespace mediactrl;
 
 string random_string(size_t size);
@@ -159,7 +165,7 @@ MediaCtrlRtpChannel::MediaCtrlRtpChannel(const InetHostAddress &ia, int media)
 		rtpSetup();
 
 	rtpSession = rtp_session_new(RTP_SESSION_SENDRECV);
-	rtp_session_set_local_addr(rtpSession, "0.0.0.0", -1, -1);	// Choose a random port
+	RTP_SESSION_SET_LOCAL_ADDR(rtpSession); // Choose a random port
 	rtp_session_set_scheduling_mode(rtpSession, TRUE);	// FIXME
 	rtp_session_set_blocking_mode(rtpSession, TRUE);	// FIXME
 	rtp_session_set_connected_mode(rtpSession, TRUE);

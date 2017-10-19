@@ -24,6 +24,7 @@
  * \brief IVR Control Package (draft-ietf-mediactrl-ivr-control-package-06)
  *
  * \author Lorenzo Miniero <lorenzo.miniero@unina.it>
+ * \author Piotr Grabowski <https://github.com/pgrabowski>
  *
  * \ingroup packages
  * \ref packages
@@ -2213,15 +2214,12 @@ int IvrDialog::prepare()
 							if(rate > 0)
 								cout << "[IVR] Duration: " << dec << duration << "ms (rate ~ " << rate << ", timing ~ " << aTiming << ") in " << dec << fctx->streams[i]->nb_frames << " frames" << endl;
 							// Check if we can do resampling
-							//ReSampleContext *resample = audio_resample_init(1, ctx->channels, 8000, ctx->sample_rate);
-              
-              //todo in/out_sample_fmt is set wrong
               SwrContext *resample = swr_alloc_set_opts(NULL,  // we're allocating a new context
                       1,  // out_ch_layout
-                      AV_SAMPLE_FMT_S16,    // out_sample_fmt
+                      ctx->sample_fmt,    // out_sample_fmt
                       8000,              // out_sample_rate
                       ctx->channels, // in_ch_layout
-                      AV_SAMPLE_FMT_FLTP,   // in_sample_fmt
+                      ctx->sample_fmt,   // in_sample_fmt
                       ctx->sample_rate,                // in_sample_rate
                       0,                    // log_offset
                       NULL);                // log_ctx
@@ -3058,7 +3056,7 @@ void IvrDialog::playAnnouncements()
 	AVCodecContext *ctx = NULL, *actx[TRACKS];
 	AVCodec *codec = NULL, *acodec[TRACKS];
 	SwrContext *resample[TRACKS];
-	AVFrame *incoming = NULL, *packetFrame = NULL;
+	AVFrame *packetFrame = NULL;
 	AVPacket packet;
 	packet.data = NULL;
 	int gotFrame = 0, err = 0;
@@ -3142,10 +3140,10 @@ void IvrDialog::playAnnouncements()
 	long int mixedBuffer[160];	// Mix of the parallel tracks
 	short int outBuffer[160];	// Mix of the parallel tracks (trimmed)
 	int8_t *buffer = (int8_t *)MCMALLOC(AVCODEC_MAX_AUDIO_FRAME_SIZE, sizeof(int8_t));
-	int8_t *inBuffer = (int8_t *)MCMALLOC(AVCODEC_MAX_AUDIO_FRAME_SIZE, sizeof(int8_t));
+	uint8_t *inBuffer = (uint8_t *)MCMALLOC(AVCODEC_MAX_AUDIO_FRAME_SIZE, sizeof(uint8_t));
 	// For resampling (FIFO)
 	int size = 0;
-	int8_t *resampleBuf = (int8_t*)MCMALLOC(2 * AVCODEC_MAX_AUDIO_FRAME_SIZE, sizeof(int8_t));
+	uint8_t *resampleBuf = (uint8_t*)MCMALLOC(2 * AVCODEC_MAX_AUDIO_FRAME_SIZE, sizeof(uint8_t));
 	int8_t *fifoBuf = (int8_t*)MCMALLOC(2 * AVCODEC_MAX_AUDIO_FRAME_SIZE, sizeof(int8_t));
 	AVFifoBuffer *fifo = av_fifo_alloc_array(TRACKS, 2 * AVCODEC_MAX_AUDIO_FRAME_SIZE);
 
@@ -3240,19 +3238,16 @@ void IvrDialog::playAnnouncements()
 									actx[step] = ctx;
 									codec = avcodec_find_decoder(ctx->codec_id);
 									acodec[step] = codec;
-									//resample[step] = audio_resample_init(1, ctx->channels, 8000, ctx->sample_rate);
-                  
-                  //todo fix me sample fmt in/out
+                  //todo
                   resample[step] = swr_alloc_set_opts(NULL,  // we're allocating a new context
                       1,  // out_ch_layout
-                      AV_SAMPLE_FMT_S16,    // out_sample_fmt
+                      ctx->sample_fmt,    // out_sample_fmt
                       8000,              // out_sample_rate
                       ctx->channels, // in_ch_layout
-                      AV_SAMPLE_FMT_FLTP,   // in_sample_fmt
+                      ctx->sample_fmt,   // in_sample_fmt
                       ctx->sample_rate,                // in_sample_rate
                       0,                    // log_offset
                       NULL);                // log_ctx
-
 									if(resample[step] == NULL)
 										cout << "[IVR] \t\tError creating resammpler, audio will fail!" << endl;
 									avcodec_open2(ctx, codec, NULL);
@@ -3274,16 +3269,12 @@ void IvrDialog::playAnnouncements()
 												continue;
 											if(packet.pts >= pts)
 												break;
-											//err = avcodec_decode_audio2(ctx, (int16_t*)inBuffer, &size, packet.data, packet.size);
-                      //new start
                       int got_frame = 0;
                       err = avcodec_decode_audio4(ctx, packetFrame, &got_frame, &packet);
-                      //todo
-                      //if (got_frame) {
-                      //  data_size = av_samples_get_buffer_size(NULL, packet.audio_st->codec->channels, packet.audio_frame.nb_samples, packet.audio_st->codec->sample_fmt, 1);
-                      //  memcpy(packet.audio_buf, packet.audio_frame.data[0], data_size);
-                      //}
-                      //new end
+                      if (got_frame) {
+                        data_size = av_samples_get_buffer_size(NULL, ctx->channels, packetFrame->nb_samples, ctx->sample_fmt, 1);
+                        memcpy(inBuffer, packetFrame->data[0], data_size);
+                      }
 										} while(1);
 										if(packet.data)
 											av_free_packet(&packet);
@@ -3399,24 +3390,20 @@ void IvrDialog::playAnnouncements()
 									continue;
 								if(packet.pts >= pts)
 									break;
-								//err = avcodec_decode_audio2(ctx, (int16_t*)inBuffer, &size, packet.data, packet.size);
-                //new start
                 int got_frame = 0;
-                //AVPacket *pkt = &is->audio_pkt;
                 err = avcodec_decode_audio4(ctx, packetFrame, &got_frame, &packet);
-                //todo
-                //if (got_frame) {
-                //  data_size = av_samples_get_buffer_size(NULL, packet->audio_st->codec->channels, packet->audio_frame.nb_samples, packet->audio_st->codec->sample_fmt, 1);
-                //  memcpy(packet->audio_buf, packet->audio_frame.data[0], data_size);
-                //}
-                //new end
+                if (got_frame) {
+                  data_size = av_samples_get_buffer_size(NULL, ctx->channels, packetFrame->nb_samples, ctx->sample_fmt, 1);
+                  memcpy(inBuffer, packetFrame->data[0], data_size);
+                }
 							} while(1);
 							if(packet.data)
 								av_free_packet(&packet);
 							ctx->skip_idct = AVDISCARD_NONE ;
 							ctx->skip_frame = AVDISCARD_NONE ;
 						}
-						if((annc != NULL) && (currentAnnouncement != announcements->end()) && (promptInstance != NULL) && (prompt != NULL) && (fctx != NULL)) {
+						
+            if((annc != NULL) && (currentAnnouncement != announcements->end()) && (promptInstance != NULL) && (prompt != NULL) && (fctx != NULL)) {
 							newframe = NULL;
 							if(*seekRequested)
 								*seekRequested = false;
@@ -3443,16 +3430,27 @@ void IvrDialog::playAnnouncements()
 										currentAnnouncement++;	// FIXME
 										*currentDuration = *currentDuration + annc->getDuration();
 										size = AVCODEC_MAX_AUDIO_FRAME_SIZE;
-                    //todo
-										//err = avcodec_decode_audio2(ctx, (int16_t*)inBuffer, &size, packet.data, packet.size);
+                    int got_frame = 0;
+                    err = avcodec_send_packet(ctx, &packet);
+										if((err < 0) || (from < 1))
+											break;
+                    err = avcodec_receive_frame(ctx, packetFrame);
+										if((err < 0) || (from < 1))
+											break;
+                    if (got_frame) {
+                      size = av_samples_get_buffer_size(NULL, ctx->channels, packetFrame->nb_samples, ctx->sample_fmt, 1);
+                      memcpy(inBuffer, packetFrame->data[0], size);
+                      av_frame_unref(packetFrame);
+                    }
 										from = size;
 										if((err < 0) || (from < 1))
 											break;
-                    //todo
-										//err = audio_resample(resample[step], (int16_t*)resampleBuf, (int16_t*)inBuffer, from/(ctx->channels*2));
-										//if(err > 0)
-										//	av_fifo_write(&fifo[step], (uint8_t*)resampleBuf, err*2);
-										if(av_fifo_size(&fifo[step]) >= 320)
+                    //todo 11
+                    const uint8_t* i = reinterpret_cast<const uint8_t*>(inBuffer);
+                    err = swr_convert(*resample, &resampleBuf, from/(ctx->channels*2), &i, from/(ctx->channels*2));
+										if(err > 0)
+											av_fifo_generic_write(fifo, (uint8_t*)resampleBuf, err*2, NULL);
+                    if(av_fifo_size(&fifo[step]) >= 320)
 											break;	// Enough buffering...
 									}
 								}
@@ -3708,7 +3706,7 @@ void IvrDialog::playAnnouncements()
 		if(resample[track] != NULL)
 			swr_close(resample[track]);
 		resample[track] = NULL;
-		av_fifo_free(&fifo[track]);
+//		av_fifo_free(&fifo[track]);
 	}
 	clockTimer->endTimer();
 	delete clockTimer;
