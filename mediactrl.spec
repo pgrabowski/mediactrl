@@ -1,4 +1,4 @@
-Name:       mediactrl
+Name:       mediactrl-prototype
 Version:    0.4
 Release:    1
 Summary:    Mediactrl server.
@@ -9,9 +9,7 @@ Source0:    https://github.com/pgrabowski/mediactrl/archive/master.zip
 BuildRoot:  %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 BuildRequires: gcc-c++ libtool make automake c-ares-devel ffmpeg-devel ortp-devel resiprocate-devel expat-devel boost-devel gsm-devel libcurl-devel openssl-devel commoncpp2-devel
 BuildArch: x86_64
-Requires(post): /sbin/install-info
-Requires(postun):   /sbin/install-info
-Requires: ffmpeg ortp resiprocate expat boost gsm libcurl openssl commoncpp2
+Requires: ffmpeg ortp resiprocate-libs expat boost gsm libcurl openssl commoncpp2
 
 %description
 Mediactrl server.
@@ -33,21 +31,15 @@ rm -rf %{buildroot}%{_infodir}/dir
 rm -rf %{buildroot}
 
 %post
-/sbin/install-info %{_infodir}/autoconf.info %{_infodir}/dir || :
 
 %preun
-if [ "$1" = 0 ]; then
-/sbin/install-info --del %{_infodir}/autoconf.info %{_infodir}/dir || :
-fi
 
 %files
 %defattr(-,root,root,-)
-%doc AUTHORS COPYING ChangeLog NEWS README THANKS TODO
-%exclude %{_infodir}/standards*
+%doc AUTHORS COPYING ChangeLog NEWS README
+%config %{_sysconfdir}/mediactrl
 %{_bindir}/*
-%{_datadir}/autoconf
-%{_infodir}/*
-%{_mandir}/*/*
+%{_datadir}/mediactrl-prototype
 
 %changelog
 * Fri Oct 20 2017 Piotr Grabowski <github.com/pgrabowski> 0.4
